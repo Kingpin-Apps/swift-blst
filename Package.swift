@@ -1,27 +1,61 @@
-// swift-tools-version: 6.3
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
+// swift-tools-version: 6.2
 import PackageDescription
+import Foundation
+
+let cblstTarget: Target
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+    cblstTarget = .binaryTarget(
+        name: "CBlst",
+        path: "CBlst.xcframework"
+    )
+#elseif os(Linux)
+    cblstTarget = .binaryTarget(
+        name: "CBlst",
+        path: "CBlst.artifactbundle"
+    )
+#else
+    cblstTarget = .systemLibrary(
+        name: "CBlst",
+        path: "CBlst",
+        pkgConfig: "blst",
+        providers: [
+            .apt(["libblst-dev"]),
+            .brew(["blst"]),
+        ]
+    )
+#endif
 
 let package = Package(
     name: "swift-blst",
+    platforms: [
+        .macOS(.v14),
+        .iOS(.v16),
+    ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
-        .library(
-            name: "swift-blst",
-            targets: ["swift-blst"]
-        ),
+        .library(name: "CBlst", targets: ["CBlst"]),
+        .library(name: "SwiftBLST", targets: ["SwiftBLST"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.3.0")),
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
+        cblstTarget,
         .target(
-            name: "swift-blst"
+            name: "SwiftBLST",
+            dependencies: [
+                "CBlst",
+                .product(name: "BigInt", package: "BigInt"),
+            ],
+            path: "Sources/SwiftBLST",
+            resources: [
+                .copy("Resources")
+            ]
         ),
         .testTarget(
-            name: "swift-blstTests",
-            dependencies: ["swift-blst"]
+            name: "SwiftBLSTTests",
+            dependencies: ["SwiftBLST"],
+            path: "Tests/SwiftBLSTTests",
+            resources: [.copy("Vectors")]
         ),
-    ],
-    swiftLanguageModes: [.v6]
+    ]
 )
