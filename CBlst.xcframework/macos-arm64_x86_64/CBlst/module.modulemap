@@ -1,4 +1,0 @@
-module CBlst {
-    header "blst.h"
-    export *
-}

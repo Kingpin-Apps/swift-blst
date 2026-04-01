@@ -2,19 +2,33 @@
 import PackageDescription
 import Foundation
 
-let cblstTarget: Target
+// On Apple platforms, the CBlst binary (xcframework) is headerless to avoid
+// modulemap collisions when combined with other xcframework packages.
+// Headers are provided separately via the CBlst wrapper target.
+let cblstBinaryTarget: Target
+let cblstTargets: [Target]
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-    cblstTarget = .binaryTarget(
-        name: "CBlst",
+    cblstBinaryTarget = .binaryTarget(
+        name: "_CBlstBinary",
         path: "CBlst.xcframework"
     )
+    cblstTargets = [
+        cblstBinaryTarget,
+        .target(
+            name: "CBlst",
+            dependencies: ["_CBlstBinary"],
+            path: "CBlstModule",
+            publicHeadersPath: "include"
+        ),
+    ]
 #elseif os(Linux)
-    cblstTarget = .binaryTarget(
+    cblstBinaryTarget = .binaryTarget(
         name: "CBlst",
         path: "CBlst.artifactbundle"
     )
+    cblstTargets = [cblstBinaryTarget]
 #else
-    cblstTarget = .systemLibrary(
+    cblstBinaryTarget = .systemLibrary(
         name: "CBlst",
         path: "CBlst",
         pkgConfig: "blst",
@@ -23,6 +37,7 @@ let cblstTarget: Target
             .brew(["blst"]),
         ]
     )
+    cblstTargets = [cblstBinaryTarget]
 #endif
 
 let package = Package(
@@ -38,8 +53,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.3.0")),
     ],
-    targets: [
-        cblstTarget,
+    targets: cblstTargets + [
         .target(
             name: "SwiftBLST",
             dependencies: [
