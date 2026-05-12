@@ -1,3 +1,9 @@
+## 0.1.3 (2026-05-12)
+
+### Fix
+
+- improve cross platform compatibility
+
 ## 0.1.2 (2026-04-01)
 
 ### Fix
