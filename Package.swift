@@ -21,20 +21,24 @@ let cblstTargets: [Target]
             publicHeadersPath: "include"
         ),
     ]
-#elseif os(Linux)
-    cblstBinaryTarget = .binaryTarget(
-        name: "CBlst",
-        path: "CBlst.artifactbundle"
-    )
-    cblstTargets = [cblstBinaryTarget]
 #else
-    cblstBinaryTarget = .systemLibrary(
+    // Linux / Android / WebAssembly / etc. — compile blst from vendored portable C
+    // source (no assembly; pinned commit per scripts/build-linux.sh).
+    cblstBinaryTarget = .target(
         name: "CBlst",
-        path: "CBlst",
-        pkgConfig: "blst",
-        providers: [
-            .apt(["libblst-dev"]),
-            .brew(["blst"]),
+        path: "BlstLinuxSource",
+        exclude: [],
+        // Two translation units, matching blst's official `build.sh`:
+        //   - `src/server.c`         — the C library (single TU, includes every other .c)
+        //   - `assembly.S`           — top-level dispatcher; includes per-arch .S files
+        //                              from `elf/` (x86_64 / aarch64) and defines all
+        //                              the modular-arithmetic + SHA-256 symbols that
+        //                              `server.c` references but doesn't define.
+        sources: ["src/server.c", "assembly.S"],
+        publicHeadersPath: "include",
+        cSettings: [
+            .headerSearchPath("src"),
+            .unsafeFlags(["-fno-builtin"]),
         ]
     )
     cblstTargets = [cblstBinaryTarget]
