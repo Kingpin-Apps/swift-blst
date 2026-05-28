@@ -45,7 +45,7 @@ let cblstTargets: [Target]
 #endif
 
 let package = Package(
-    name: "swift-blst",
+    name: "SwiftBLST",
     platforms: [
         .macOS(.v14),
         .iOS(.v16),
