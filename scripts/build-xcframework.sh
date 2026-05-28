@@ -1,8 +1,16 @@
 #!/bin/bash
 set -e
 
-# Build CBlst.xcframework for Apple platforms
-# Supports: macOS (arm64 + x86_64), iOS device (arm64), iOS Simulator (arm64 + x86_64)
+# Build CBlst.xcframework for all Apple platforms.
+# Supported slices:
+#   - macOS      (arm64 + x86_64)
+#   - iOS        device (arm64), simulator (arm64 + x86_64)
+#   - tvOS       device (arm64), simulator (arm64 + x86_64)
+#   - watchOS    device (arm64_32 + arm64), simulator (arm64 + x86_64)
+#   - visionOS   device (arm64), simulator (arm64)
+#
+# All non-macOS/iOS-device slices use blst's portable mode (`-D__BLST_PORTABLE__`)
+# so no assembly is required.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -30,147 +38,118 @@ else
     fi
 fi
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Build helper ──────────────────────────────────────────────────────────────
+# Compile blst for one (target-triple, sdk) pair and drop libblst.a in OUT_DIR.
 build_blst() {
-    local ARCH="$1"        # e.g. arm64, x86_64
-    local SDK="$2"         # e.g. macosx, iphoneos, iphonesimulator
-    local EXTRA_FLAGS="$3" # e.g. -D__BLST_PORTABLE__
-    local OUT_DIR="$4"     # destination directory for libblst.a
+    local TARGET="$1"      # e.g. arm64-apple-tvos14.0, x86_64-apple-watchos9.0-simulator
+    local ARCH="$2"        # arm64, x86_64, arm64_32 — used only to name the work dir
+    local SDK="$3"         # macosx, iphoneos, iphonesimulator, appletvos, appletvsimulator, watchos, watchsimulator, xros, xrsimulator
+    local EXTRA_FLAGS="$4" # e.g. -D__BLST_PORTABLE__
+    local OUT_DIR="$5"
 
     local SDK_PATH
     SDK_PATH=$(xcrun --sdk "${SDK}" --show-sdk-path)
-    local MIN_VERSION_FLAG=""
-    case "${SDK}" in
-        macosx)           MIN_VERSION_FLAG="-mmacosx-version-min=11.0" ;;
-        iphoneos)         MIN_VERSION_FLAG="-miphoneos-version-min=14.0" ;;
-        iphonesimulator)  MIN_VERSION_FLAG="-mios-simulator-version-min=14.0" ;;
-    esac
 
     local WORK_DIR="${BUILD_DIR}/${SDK}-${ARCH}"
     mkdir -p "${WORK_DIR}"
 
-    echo "  -> Building blst for ${SDK}/${ARCH} in ${WORK_DIR}"
+    echo "  -> Building blst for ${TARGET} (sdk ${SDK})"
 
-    # blst's build.sh reads $CC and $CFLAGS.
-    # We set CFLAGS to override the default (-O2 -fno-builtin -fPIC are already defaults).
-    # Pass -arch and -target as extra positional args so build.sh routes them into CFLAGS.
     (
         cd "${WORK_DIR}"
         CC="$(xcrun --sdk "${SDK}" --find clang)" \
-        CFLAGS="-O2 -fno-builtin -fPIC -arch ${ARCH} -isysroot ${SDK_PATH} ${MIN_VERSION_FLAG} ${EXTRA_FLAGS}" \
+        CFLAGS="-O2 -fno-builtin -fPIC -target ${TARGET} -isysroot ${SDK_PATH} ${EXTRA_FLAGS}" \
         bash "${BLST_DIR}/build.sh"
     )
 
     mkdir -p "${OUT_DIR}"
-    cp "${WORK_DIR}/libblst.a" "${OUT_DIR}/libblst.a"
-}
-
-make_framework() {
-    local LIB="$1"       # path to libblst.a (possibly lipo'd universal)
-    local FW_DIR="$2"    # destination .framework directory
-    local NAME="CBlst"
-
-    rm -rf "${FW_DIR}"
-    mkdir -p "${FW_DIR}/Headers"
-
-    # Copy public headers
-    cp "${BLST_DIR}/bindings/blst.h" "${FW_DIR}/Headers/"
-    cp "${BLST_DIR}/bindings/blst_aux.h" "${FW_DIR}/Headers/" 2>/dev/null || true
-
-    # Write module map
-    cat > "${FW_DIR}/Headers/module.modulemap" <<MODULEMAP
-module CBlst {
-    header "blst.h"
-    export *
-}
-MODULEMAP
-
-    # Copy the library (as a static framework — just copy the .a directly)
-    cp "${LIB}" "${FW_DIR}/${NAME}"
-
-    # Minimal Info.plist
-    cat > "${FW_DIR}/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundlePackageType</key>
-    <string>FMWK</string>
-    <key>CFBundleIdentifier</key>
-    <string>org.swift-blst.CBlst</string>
-    <key>CFBundleName</key>
-    <string>CBlst</string>
-    <key>CFBundleVersion</key>
-    <string>1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>MinimumOSVersion</key>
-    <string>11.0</string>
-    <key>CFBundleSupportedPlatforms</key>
-    <array>
-        <string>MacOSX</string>
-    </array>
-</dict>
-</plist>
-PLIST
+    # Skip cp if the build wrote directly to OUT_DIR (paths collide when the
+    # SDK name matches our short OUT_DIR name, e.g. watchos-arm64).
+    if [ "${WORK_DIR}/libblst.a" != "${OUT_DIR}/libblst.a" ]; then
+        cp "${WORK_DIR}/libblst.a" "${OUT_DIR}/libblst.a"
+    fi
 }
 
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
-# ── macOS arm64 ────────────────────────────────────────────────────────────────
-echo "==> macOS arm64"
-build_blst "arm64" "macosx" "" "${BUILD_DIR}/macos-arm64"
+# Portable C only (no assembly) — required for non-x86_64/arm64-device platforms,
+# and we use it uniformly on simulators too so a single flag-set covers everything.
+PORTABLE="-D__BLST_PORTABLE__"
 
-# ── macOS x86_64 ──────────────────────────────────────────────────────────────
-echo "==> macOS x86_64"
-build_blst "x86_64" "macosx" "" "${BUILD_DIR}/macos-x86_64"
-
-# ── macOS universal lipo ───────────────────────────────────────────────────────
-echo "==> Lipo macOS universal"
+# ── macOS ──────────────────────────────────────────────────────────────────────
+echo "==> macOS"
+build_blst "arm64-apple-macos11.0"  "arm64"  "macosx" ""                  "${BUILD_DIR}/macos-arm64"
+build_blst "x86_64-apple-macos11.0" "x86_64" "macosx" ""                  "${BUILD_DIR}/macos-x86_64"
 mkdir -p "${BUILD_DIR}/macos-universal"
 lipo -create \
     "${BUILD_DIR}/macos-arm64/libblst.a" \
     "${BUILD_DIR}/macos-x86_64/libblst.a" \
     -output "${BUILD_DIR}/macos-universal/libblst.a"
 
-# ── iOS device arm64 ──────────────────────────────────────────────────────────
-echo "==> iOS device arm64"
-build_blst "arm64" "iphoneos" "-D__BLST_PORTABLE__" "${BUILD_DIR}/ios-arm64"
-
-# ── iOS Simulator arm64 ───────────────────────────────────────────────────────
-echo "==> iOS Simulator arm64"
-build_blst "arm64" "iphonesimulator" "-D__BLST_PORTABLE__" "${BUILD_DIR}/iossim-arm64"
-
-# ── iOS Simulator x86_64 ──────────────────────────────────────────────────────
-echo "==> iOS Simulator x86_64"
-build_blst "x86_64" "iphonesimulator" "-D__BLST_PORTABLE__" "${BUILD_DIR}/iossim-x86_64"
-
-# ── iOS Simulator universal lipo ──────────────────────────────────────────────
-echo "==> Lipo iOS Simulator universal"
+# ── iOS ────────────────────────────────────────────────────────────────────────
+echo "==> iOS"
+build_blst "arm64-apple-ios14.0"            "arm64"  "iphoneos"        "${PORTABLE}" "${BUILD_DIR}/ios-arm64"
+build_blst "arm64-apple-ios14.0-simulator"  "arm64"  "iphonesimulator" "${PORTABLE}" "${BUILD_DIR}/iossim-arm64"
+build_blst "x86_64-apple-ios14.0-simulator" "x86_64" "iphonesimulator" "${PORTABLE}" "${BUILD_DIR}/iossim-x86_64"
 mkdir -p "${BUILD_DIR}/iossim-universal"
 lipo -create \
     "${BUILD_DIR}/iossim-arm64/libblst.a" \
     "${BUILD_DIR}/iossim-x86_64/libblst.a" \
     -output "${BUILD_DIR}/iossim-universal/libblst.a"
 
-# ── Wrap each into a minimal .framework ───────────────────────────────────────
-echo "==> Creating .framework bundles"
-make_framework "${BUILD_DIR}/macos-universal/libblst.a"  "${BUILD_DIR}/frameworks/macos/CBlst.framework"
-make_framework "${BUILD_DIR}/ios-arm64/libblst.a"         "${BUILD_DIR}/frameworks/ios/CBlst.framework"
-make_framework "${BUILD_DIR}/iossim-universal/libblst.a"  "${BUILD_DIR}/frameworks/iossim/CBlst.framework"
+# ── tvOS ───────────────────────────────────────────────────────────────────────
+echo "==> tvOS"
+build_blst "arm64-apple-tvos14.0"            "arm64"  "appletvos"        "${PORTABLE}" "${BUILD_DIR}/tvos-arm64"
+build_blst "arm64-apple-tvos14.0-simulator"  "arm64"  "appletvsimulator" "${PORTABLE}" "${BUILD_DIR}/tvossim-arm64"
+build_blst "x86_64-apple-tvos14.0-simulator" "x86_64" "appletvsimulator" "${PORTABLE}" "${BUILD_DIR}/tvossim-x86_64"
+mkdir -p "${BUILD_DIR}/tvossim-universal"
+lipo -create \
+    "${BUILD_DIR}/tvossim-arm64/libblst.a" \
+    "${BUILD_DIR}/tvossim-x86_64/libblst.a" \
+    -output "${BUILD_DIR}/tvossim-universal/libblst.a"
+
+# ── watchOS ────────────────────────────────────────────────────────────────────
+# Device slice covers both arm64_32 (Series 4–9) and arm64 (Series 10+, Ultra).
+echo "==> watchOS"
+build_blst "arm64_32-apple-watchos7.0"        "arm64_32" "watchos"        "${PORTABLE}" "${BUILD_DIR}/watchos-arm64_32"
+build_blst "arm64-apple-watchos9.0"           "arm64"    "watchos"        "${PORTABLE}" "${BUILD_DIR}/watchos-arm64"
+build_blst "arm64-apple-watchos9.0-simulator" "arm64"    "watchsimulator" "${PORTABLE}" "${BUILD_DIR}/watchossim-arm64"
+build_blst "x86_64-apple-watchos9.0-simulator" "x86_64"  "watchsimulator" "${PORTABLE}" "${BUILD_DIR}/watchossim-x86_64"
+mkdir -p "${BUILD_DIR}/watchos-universal"
+lipo -create \
+    "${BUILD_DIR}/watchos-arm64_32/libblst.a" \
+    "${BUILD_DIR}/watchos-arm64/libblst.a" \
+    -output "${BUILD_DIR}/watchos-universal/libblst.a"
+mkdir -p "${BUILD_DIR}/watchossim-universal"
+lipo -create \
+    "${BUILD_DIR}/watchossim-arm64/libblst.a" \
+    "${BUILD_DIR}/watchossim-x86_64/libblst.a" \
+    -output "${BUILD_DIR}/watchossim-universal/libblst.a"
+
+# ── visionOS ───────────────────────────────────────────────────────────────────
+# Simulator is arm64-only (visionOS Simulator runs only on Apple silicon).
+echo "==> visionOS"
+build_blst "arm64-apple-xros1.0"           "arm64" "xros"        "${PORTABLE}" "${BUILD_DIR}/xros-arm64"
+build_blst "arm64-apple-xros1.0-simulator" "arm64" "xrsimulator" "${PORTABLE}" "${BUILD_DIR}/xrossim-arm64"
 
 # ── Assemble XCFramework ───────────────────────────────────────────────────────
+# Headerless on purpose: blst.h lives in CBlstModule/include and is exposed via
+# the CBlst wrapper target in Package.swift. Keeping the xcframework headerless
+# prevents modulemap collisions when this package is combined with others.
 echo "==> Creating XCFramework at ${OUTPUT}"
 rm -rf "${OUTPUT}"
 
 xcodebuild -create-xcframework \
     -library "${BUILD_DIR}/macos-universal/libblst.a" \
-        -headers "${BUILD_DIR}/frameworks/macos/CBlst.framework/Headers" \
     -library "${BUILD_DIR}/ios-arm64/libblst.a" \
-        -headers "${BUILD_DIR}/frameworks/ios/CBlst.framework/Headers" \
     -library "${BUILD_DIR}/iossim-universal/libblst.a" \
-        -headers "${BUILD_DIR}/frameworks/iossim/CBlst.framework/Headers" \
+    -library "${BUILD_DIR}/tvos-arm64/libblst.a" \
+    -library "${BUILD_DIR}/tvossim-universal/libblst.a" \
+    -library "${BUILD_DIR}/watchos-universal/libblst.a" \
+    -library "${BUILD_DIR}/watchossim-universal/libblst.a" \
+    -library "${BUILD_DIR}/xros-arm64/libblst.a" \
+    -library "${BUILD_DIR}/xrossim-arm64/libblst.a" \
     -output "${OUTPUT}"
 
 echo ""

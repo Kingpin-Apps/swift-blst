@@ -15,18 +15,21 @@ time the framework is rebuilt.
 ## SHA-256 hashes
 
 ```
-9ff836516d2ce26d62f0adc5605a5c24a7d93e4b3aadced6cad2563636c168be  CBlst.xcframework/macos-arm64_x86_64/libblst.a
-0bc9885ea8e167f59424717488bfa4feb19c53cd456c26c9bf5b3e728824e5ef  CBlst.xcframework/ios-arm64/libblst.a
-161edfc043661d8efac08059f6157e81dcc8a961bdb4d815e2f2f3e49113c597  CBlst.xcframework/ios-arm64_x86_64-simulator/libblst.a
+9aeac0b3c84d930eb9e89cfe33cf1d91dc3c26dcf800887176ad7578364c6391  CBlst.xcframework/ios-arm64/libblst.a
+92466ea074029f6ee26e76adf0bd04dba7bfe36ce10b0caa439a771ac2d3e737  CBlst.xcframework/ios-arm64_x86_64-simulator/libblst.a
+5788909668f97095a08c67e815c5bde99d7e6747fab87d18baee4a1a57f9ccd1  CBlst.xcframework/macos-arm64_x86_64/libblst.a
+93eed0af0361cad4b7af750508f38f00c8ce915ee10e8583fa5a6c1bd2a4168d  CBlst.xcframework/tvos-arm64/libblst.a
+996417a65b0cbf560f990f273a9ff4ca2b46e8d76b1017b15cf040eb9d809436  CBlst.xcframework/tvos-arm64_x86_64-simulator/libblst.a
+d7d71b3e47e8eddeffb96dca01c616b62bce73ce45c3f3590b60f5f69200f42d  CBlst.xcframework/watchos-arm64_arm64_32/libblst.a
+6f2f5f7348bbb7e89ec1e2c5a50632bfb672c15b3a5fea71c55731a5477a2c6a  CBlst.xcframework/watchos-arm64_x86_64-simulator/libblst.a
+373bdd64cda7ee50dde5d5c9d0fb16756b6c0471a2a910f25046b081caa3e9e7  CBlst.xcframework/xros-arm64/libblst.a
+c4a1877fb6130c73f7082e067046e7fc8279c2141e77bf39133bb70bd6d8ee6f  CBlst.xcframework/xros-arm64-simulator/libblst.a
 ```
 
 ## Verification
 
 ```bash
-shasum -a 256 \
-  CBlst.xcframework/macos-arm64_x86_64/libblst.a \
-  CBlst.xcframework/ios-arm64/libblst.a \
-  CBlst.xcframework/ios-arm64_x86_64-simulator/libblst.a
+find CBlst.xcframework -name 'libblst.a' | sort | xargs shasum -a 256
 ```
 
 Expected output matches the hashes above.
