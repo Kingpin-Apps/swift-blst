@@ -1,3 +1,9 @@
+## 0.1.5 (2026-05-27)
+
+### Fix
+
+- imrpove cross platform compatibility
+
 ## 0.1.4 (2026-05-15)
 
 ### Fix
