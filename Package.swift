@@ -58,7 +58,7 @@ let package = Package(
         .library(name: "SwiftBLST", targets: ["SwiftBLST"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.3.0")),
+        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.7.0"),
     ],
     targets: cblstTargets + [
         .target(
