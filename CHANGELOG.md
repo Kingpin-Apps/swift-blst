@@ -1,3 +1,10 @@
+## 0.1.7 (2026-06-09)
+
+### Fix
+
+- compile Linux CBlst without unsafe flags so it's version-consumable
+- ship Linux CBlst as a binaryTarget to drop unsafe build flags
+
 ## 0.1.6 (2026-05-28)
 
 ### Fix
