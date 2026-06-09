@@ -1,21 +1,11 @@
 #!/bin/bash
 set -e
 
-# Build libblst.a for Linux (x86_64 and/or aarch64) and wrap it in a Swift Package
-# Manager artifact bundle, consumed as a `binaryTarget`. Compiling blst as a binary
-# (rather than a source target) keeps blst's required `-fno-builtin` flag — which can
-# only be passed to SwiftPM via `.unsafeFlags` — out of the package graph, so the
-# package can be depended on by version without tripping the "unsafe build flags" check.
+# Build libblst.a for Linux (x86_64 and/or arm64) and wrap it in an artifact bundle
+# suitable for use as a Swift Package Manager binaryTarget.
 #
 # Usage:
 #   bash build-linux.sh [--arch x86_64|aarch64] [--output <dir>]
-#       Build the given arch (default: host) and (re)write info.json for every arch
-#       currently present under <output>/CBlst/. Run once per arch to accumulate a
-#       multi-arch bundle.
-#
-#   bash build-linux.sh --assemble-only [--output <dir>]
-#       Skip building; just (re)write info.json from the arch directories already
-#       present. Used by CI to combine per-arch outputs built on separate runners.
 #
 # Output: CBlst.artifactbundle/
 
@@ -27,63 +17,14 @@ BLST_COMMIT="f262a6e9985f84e1d2842960a158dc768b217884"
 BUILD_DIR="${TMPDIR:-/tmp}/cblst-linux-build"
 OUTPUT="${REPO_ROOT}/CBlst.artifactbundle"
 TARGET_ARCH="${TARGET_ARCH:-$(uname -m)}"  # default to host arch
-ASSEMBLE_ONLY=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --arch)          TARGET_ARCH="$2"; shift 2 ;;
-        --output)        OUTPUT="$2";      shift 2 ;;
-        --assemble-only) ASSEMBLE_ONLY=1;  shift ;;
-        *)               echo "Unknown arg: $1"; exit 1 ;;
+        --arch)    TARGET_ARCH="$2"; shift 2 ;;
+        --output)  OUTPUT="$2";      shift 2 ;;
+        *)         echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
-
-# ── (Re)write info.json listing every arch present under ${OUTPUT}/CBlst/ ───────
-# Scans the per-triple directories already on disk and emits one variant each, so the
-# bundle stays valid whether it holds one arch or several.
-write_info_json() {
-    local variants="" first=1
-    for dir in "${OUTPUT}"/CBlst/*/; do
-        [ -d "${dir}" ] || continue
-        local triple
-        triple="$(basename "${dir}")"
-        [ "${first}" -eq 1 ] || variants="${variants},"
-        first=0
-        variants="${variants}
-        {
-          \"path\": \"CBlst/${triple}\",
-          \"supportedTriples\": [\"${triple}\"]
-        }"
-    done
-
-    if [ "${first}" -eq 1 ]; then
-        echo "ERROR: no arch directories found under ${OUTPUT}/CBlst/ — nothing to assemble."
-        exit 1
-    fi
-
-    cat > "${OUTPUT}/info.json" <<INFO
-{
-  "schemaVersion": "1.0",
-  "artifacts": {
-    "CBlst": {
-      "type": "staticLibrary",
-      "version": "1.0.0",
-      "variants": [${variants}
-      ]
-    }
-  }
-}
-INFO
-}
-
-if [ "${ASSEMBLE_ONLY}" -eq 1 ]; then
-    echo "==> Assemble-only: regenerating info.json from existing arch dirs in ${OUTPUT}"
-    write_info_json
-    echo ""
-    echo "==> Done! Artifact bundle at: ${OUTPUT}"
-    ls -R "${OUTPUT}"
-    exit 0
-fi
 
 echo "==> Target arch: ${TARGET_ARCH}"
 echo "==> Build dir:   ${BUILD_DIR}"
@@ -116,27 +57,30 @@ echo "==> Building blst for Linux/${TARGET_ARCH}"
     bash "${BLST_DIR}/build.sh"
 )
 
-# ── Place this arch into the bundle ────────────────────────────────────────────
+# ── Assemble artifact bundle ───────────────────────────────────────────────────
 # SPM artifact bundle layout:
 #   CBlst.artifactbundle/
 #     info.json
 #     CBlst/
 #       <triple>/
-#         lib/libblst.a
-#         include/{blst.h, blst_aux.h?, module.modulemap}
+#         lib/
+#           libblst.a
+#         include/
+#           blst.h
+#           blst_aux.h (if present)
+#           module.modulemap
 
 # Map uname arch to Swift triple
 case "${TARGET_ARCH}" in
-    x86_64)        TRIPLE="x86_64-unknown-linux-gnu" ;;
+    x86_64)  TRIPLE="x86_64-unknown-linux-gnu" ;;
     aarch64|arm64) TRIPLE="aarch64-unknown-linux-gnu" ;;
-    *)             TRIPLE="${TARGET_ARCH}-unknown-linux-gnu" ;;
+    *)       TRIPLE="${TARGET_ARCH}-unknown-linux-gnu" ;;
 esac
 
 BUNDLE_LIB="${OUTPUT}/CBlst/${TRIPLE}/lib"
 BUNDLE_INC="${OUTPUT}/CBlst/${TRIPLE}/include"
 
-# Only clear this arch's directory — other arches already in the bundle are preserved.
-rm -rf "${OUTPUT}/CBlst/${TRIPLE}"
+rm -rf "${OUTPUT}"
 mkdir -p "${BUNDLE_LIB}"
 mkdir -p "${BUNDLE_INC}"
 
@@ -151,7 +95,24 @@ module CBlst {
 }
 MODULEMAP
 
-write_info_json
+# Write the SPM artifact bundle info.json
+cat > "${OUTPUT}/info.json" <<INFO
+{
+  "schemaVersion": "1.0",
+  "artifacts": {
+    "CBlst": {
+      "type": "staticLibrary",
+      "version": "1.0.0",
+      "variants": [
+        {
+          "path": "CBlst/${TRIPLE}",
+          "supportedTriples": ["${TRIPLE}"]
+        }
+      ]
+    }
+  }
+}
+INFO
 
 echo ""
 echo "==> Done! Artifact bundle at: ${OUTPUT}"

@@ -188,20 +188,11 @@ git clone --depth 1 --branch v0.3.13 https://github.com/supranational/blst.git /
 # Rebuild Apple platforms (run on macOS)
 bash scripts/build-xcframework.sh
 
-# Rebuild Linux — run once per arch to accumulate a multi-arch bundle
-bash scripts/build-linux.sh --arch x86_64
-bash scripts/build-linux.sh --arch aarch64
+# Rebuild Linux (run in a Linux environment or Docker)
+bash scripts/build-linux.sh
 ```
 
 Then commit the updated `CBlst.xcframework/` and `CBlst.artifactbundle/` directories.
-
-On Linux the package consumes `CBlst.artifactbundle/` as a `binaryTarget`. This keeps
-blst's required `-fno-builtin` flag (passable only via SwiftPM `.unsafeFlags`) out of the
-package graph, so downstream packages can depend on swift-blst by version without hitting
-SwiftPM's "target contains unsafe build flags" error. The bundle is normally produced and
-committed by the **Build Linux CBlst bundle** GitHub Actions workflow
-(`.github/workflows/build-linux.yml`), which builds both arches on Linux, verifies them
-with `swift test`, and commits the result.
 
 ### iOS and `__BLST_PORTABLE__`
 

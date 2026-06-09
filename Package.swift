@@ -22,15 +22,30 @@ let cblstTargets: [Target]
         ),
     ]
 #else
-    // Linux / Android / WebAssembly / etc. — consume a pre-built static blst library
-    // as a binaryTarget. blst requires `-fno-builtin` (see scripts/build-linux.sh),
-    // which SwiftPM only accepts via `.unsafeFlags`; a versioned package exposing
-    // unsafe flags cannot be used as a dependency, so we keep that flag inside the
-    // offline artifact build and ship the result as a flag-free binary instead.
-    // Build/refresh the bundle with `scripts/build-linux.sh` (CI: build-linux.yml).
-    cblstBinaryTarget = .binaryTarget(
+    // Linux / Android / WebAssembly / etc. — compile blst from vendored portable C
+    // source (no assembly; pinned commit per scripts/build-linux.sh).
+    cblstBinaryTarget = .target(
         name: "CBlst",
-        path: "CBlst.artifactbundle"
+        path: "BlstLinuxSource",
+        exclude: [],
+        // Two translation units, matching blst's official `build.sh`:
+        //   - `src/server.c`         — the C library (single TU, includes every other .c)
+        //   - `assembly.S`           — top-level dispatcher; includes per-arch .S files
+        //                              from `elf/` (x86_64 / aarch64) and defines all
+        //                              the modular-arithmetic + SHA-256 symbols that
+        //                              `server.c` references but doesn't define.
+        sources: ["src/server.c", "assembly.S"],
+        publicHeadersPath: "include",
+        // Only safe cSettings here. blst recommends `-fno-builtin`, but SwiftPM accepts
+        // it solely via `.unsafeFlags`, which bars this package from being used as a
+        // versioned dependency (the whole Cardano stack hit "target 'CBlst' contains
+        // unsafe build flags" on Linux). Compile from source like swift-nacl's
+        // Clibsodium does — safe cSettings only — so downstream packages can depend on
+        // swift-blst by version. blst's constant-time field arithmetic lives in the
+        // hand-written assembly (`assembly.S`), not the C glue affected by the flag.
+        cSettings: [
+            .headerSearchPath("src"),
+        ]
     )
     cblstTargets = [cblstBinaryTarget]
 #endif
