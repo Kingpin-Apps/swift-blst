@@ -1,3 +1,9 @@
+## 0.1.8 (2026-07-08)
+
+### Fix
+
+- **resources**: drop stray Resources/cz.json bundle (iOS codesign-invalid nested layout)
+
 ## 0.1.7 (2026-06-09)
 
 ### Fix
