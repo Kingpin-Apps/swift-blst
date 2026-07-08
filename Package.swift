@@ -73,10 +73,10 @@ let package = Package(
                 "CBlst",
                 .product(name: "BigInt", package: "BigInt"),
             ],
-            path: "Sources/SwiftBLST",
-            resources: [
-                .copy("Resources")
-            ]
+            path: "Sources/SwiftBLST"
+            // No resources: a stray `Resources/cz.json` (the Commitizen config, duplicated from
+            // the repo root) was previously `.copy`'d, producing a nested-`Resources/` bundle that
+            // iOS codesign rejects as "unsuitable". The library ships no real assets.
         ),
         .testTarget(
             name: "SwiftBLSTTests",
